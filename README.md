@@ -1,4 +1,5 @@
 # Cyclone's GitHub Stats
+![image](https://i.imgur.com/aFu1eOG.png)
 ### Features:
 - Tool to retrieve GitHub stats for your favorite user repositories
 - Add users for quickly recalling favorite GitHub repositories 
