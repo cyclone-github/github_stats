@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,23 +14,29 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// tools to retrieve user stats from github
-// coded by cyclone
-// version 0.2.11; initial github release
+/*
+tool to retrieve user stats from github
+coded by cyclone
+v0.2.11; initial github release
+v2023-10-13.1645; fixed watchers; added cache and ratelimiting support
+*/
 
 // structs for config.json file
 type Owner struct {
 	Login string `json:"login"`
 }
 type Repository struct {
-	Name       string `json:"name"`
-	Stars      int    `json:"stargazers_count"`
-	Watchers   int    `json:"watchers_count"`
-	Forks      int    `json:"forks_count"`
-	OpenIssues int    `json:"open_issues_count"`
-	Owner      Owner  `json:"owner"`
+	Name           string    `json:"name"`
+	Stars          int       `json:"stargazers_count"`
+	Watchers       int       `json:"watchers_count"`
+	Forks          int       `json:"forks_count"`
+	OpenIssues     int       `json:"open_issues_count"`
+	SubscribersURL string    `json:"subscribers_url"`
+	Owner          Owner     `json:"owner"`
+	LastFetched    time.Time `json:"last_fetched"`
 }
 
 // local json config struct
@@ -162,9 +169,44 @@ func saveConfig(config *Config, configFile *os.File) {
 	}
 }
 
-// get repository func (allows for multiple pages to be displayed)
-func getRepositories(username string) []Repository {
+// get number of subscribers ("Watchers") for a repository
+func getSubscribersCount(subscribersURL string) int {
+	resp, err := http.Get(subscribersURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error fetching subscribers: %v\n", err)
+		return -1
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading subscribers response: %v\n", err)
+		return -1
+	}
+	var subscribers []interface{}
+	err = json.Unmarshal(body, &subscribers)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error decoding subscribers response: %v\n", err)
+		return -1
+	}
+	return len(subscribers)
+}
+
+func getRepositories(username string, config *Config) ([]Repository, error) {
 	var allRepos []Repository
+	cacheFile := username + "_cache.json"
+
+	// check cache
+	fileInfo, err := os.Stat(cacheFile)
+	if err == nil {
+		cacheTime := fileInfo.ModTime()
+		if time.Since(cacheTime).Minutes() < 10 { // nth minutes cache time
+			file, _ := os.ReadFile(cacheFile)
+			json.Unmarshal(file, &allRepos)
+			return allRepos, nil
+		}
+	}
+
+	// Fetch data from API
 	perPage := 100
 	page := 1
 
@@ -172,21 +214,24 @@ func getRepositories(username string) []Repository {
 		url := fmt.Sprintf("https://api.github.com/users/%s/repos?per_page=%d&page=%d", username, perPage, page)
 		resp, err := http.Get(url)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error fetching repositories: %v\n", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("error fetching repositories: %v", err)
 		}
 		defer resp.Body.Close()
 
+		// check rate limits
+		remaining, resetTime := getRateLimits(resp.Header)
+		if remaining == 0 {
+			return nil, fmt.Errorf("rate limit exceeded, resets at %s", resetTime)
+		}
+
 		if resp.StatusCode != http.StatusOK {
-			fmt.Fprintf(os.Stderr, "Error: HTTP %d\n", resp.StatusCode)
-			os.Exit(1)
+			return nil, fmt.Errorf("error: HTTP %d", resp.StatusCode)
 		}
 
 		var repos []Repository
 		err = json.NewDecoder(resp.Body).Decode(&repos)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error decoding response: %v\n", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("error decoding response: %v", err)
 		}
 
 		if len(repos) == 0 {
@@ -197,7 +242,32 @@ func getRepositories(username string) []Repository {
 		page++
 	}
 
-	return allRepos
+	for i := range allRepos {
+		allRepos[i].Watchers = getSubscribersCount(allRepos[i].SubscribersURL)
+	}
+
+	// save to cache
+	file, _ := json.MarshalIndent(allRepos, "", " ")
+	_ = os.WriteFile(cacheFile, file, 0644)
+
+	return allRepos, nil
+}
+
+// extract GitHub rate limit headers
+func getRateLimits(headers http.Header) (int, time.Time) {
+	remaining := 0
+	if remainingStr := headers.Get("X-RateLimit-Remaining"); remainingStr != "" {
+		remaining, _ = strconv.Atoi(remainingStr)
+	}
+
+	resetTime := time.Time{}
+	if resetStr := headers.Get("X-RateLimit-Reset"); resetStr != "" {
+		if resetUnix, err := strconv.ParseInt(resetStr, 10, 64); err == nil {
+			resetTime = time.Unix(resetUnix, 0)
+		}
+	}
+
+	return remaining, resetTime
 }
 
 // print repositories func
@@ -259,9 +329,7 @@ func main() {
 	}
 
 	if *versionFlag {
-		version := "Q3ljbG9uZSBHaXRIdWIgU3RhdHMgdjAuMi4xMQo="
-		versionDecoded, _ := base64.StdEncoding.DecodeString(version)
-		fmt.Fprintln(os.Stderr, string(versionDecoded))
+		fmt.Fprintln(os.Stderr, "Cyclone GitHub Stats v2023-10-13.1645")
 		os.Exit(0)
 	}
 
@@ -303,7 +371,11 @@ func main() {
 
 		fmt.Fprintln(os.Stderr, "Fetching repositories...")
 
-		repos := getRepositories(username)
+		repos, err := getRepositories(username, &config)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 
 		sort.Slice(repos, func(i, j int) bool {
 			return strings.ToLower(repos[i].Name) < strings.ToLower(repos[j].Name)
@@ -322,6 +394,7 @@ func main() {
 			config.ReposData[repo.Name] = repo
 		}
 
+		// Save to config
 		configFile.Seek(0, 0)
 		configFile.Truncate(0)
 		err = json.NewEncoder(configFile).Encode(&config)

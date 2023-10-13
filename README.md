@@ -1,5 +1,5 @@
 # Cyclone's GitHub Stats
-![image](https://i.imgur.com/aFu1eOG.png)
+![image](https://i.imgur.com/4pBNN6K.png)
 ### Features:
 - Tool to retrieve GitHub stats for your favorite user repositories
 - Add users for quickly recalling favorite GitHub repositories 
@@ -9,5 +9,8 @@
 - ./github_stats.bin
 - Follow Prompts
 
-Compile from source code info:
+### Version:
+- v2023-10-13.1645; fixed watchers; added cache and ratelimiting support
+
+### Compile from source code info:
 - https://github.com/cyclone-github/scripts/blob/main/intro_to_go.txt
