@@ -20,8 +20,11 @@ import (
 /*
 tool to retrieve user stats from github
 coded by cyclone
+
 v0.2.11; initial github release
-v2023-10-13.1645; fixed watchers; added cache and ratelimiting support
+v0.3.0-2023-10-13;
+	fixed watchers
+	added cache and ratelimiting support
 */
 
 // structs for config.json file
