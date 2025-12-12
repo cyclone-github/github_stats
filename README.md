@@ -1,4 +1,4 @@
-[![Readme Card](https://github-readme-stats.vercel.app/api/pin/?username=cyclone-github&repo=github_stats&theme=gruvbox)](https://github.com/cyclone-github/github_stats/)
+[![Readme Card](https://github-readme-stats-fast.vercel.app/api/pin/?username=cyclone-github&repo=github_stats&theme=gruvbox)](https://github.com/cyclone-github/github_stats/)
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/cyclone-github/github_stats)](https://goreportcard.com/report/github.com/cyclone-github/github_stats)
 [![GitHub issues](https://img.shields.io/github/issues/cyclone-github/github_stats.svg)](https://github.com/cyclone-github/github_stats/issues)
@@ -19,6 +19,15 @@
 
 ### Version:
 - v0.3.0-2023-10-13; fixed watchers; added cache and ratelimiting support
+
+### Install latest release:
+```
+go install github.com/cyclone-github/github_stats@latest
+```
+### Install from latest source code (bleeding edge):
+```
+go install github.com/cyclone-github/github_stats@main
+```
 
 ### Compile from source:
 - If you want the latest features, compiling from source is the best option since the release version may run several revisions behind the source code.
